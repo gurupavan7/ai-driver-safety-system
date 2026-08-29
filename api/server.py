@@ -9,6 +9,7 @@ from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from app.telemetry import init_telemetry_table, log_telemetry
+from app.email_alerts import send_high_risk_email
 
 from app.analytics import (
     get_all_telemetry,
@@ -20,7 +21,6 @@ from app.analytics import (
 from app.paths import UPLOADS_DIR
 from app.report_generator import generate_session_report, generate_video_report
 from app.storage import init_storage
-from app.telemetry import init_telemetry_table
 from app.video_analyzer import SUPPORTED_EXTENSIONS, analyze_video
 
 
@@ -196,24 +196,35 @@ def download_video_report(
 @app.post("/telemetry/live")
 def receive_live_telemetry(payload: dict = Body(...)):
     try:
-        log_telemetry(
-            ear=float(payload["ear"]),
-            mar=float(payload["mar"]),
-            pitch=float(payload["pitch"]),
-            yaw=float(payload["yaw"]),
-            head_direction=str(payload["head_direction"]),
-            phone_detected=bool(payload["phone_detected"]),
-            seatbelt_detected=bool(payload["seatbelt_detected"]),
-            drowsy=bool(payload["drowsy"]),
-            yawning=bool(payload["yawning"]),
-            distracted=bool(payload["distracted"]),
-            risk_score=int(payload["risk_score"]),
-            risk_level=str(payload["risk_level"]),
+        telemetry_payload = {
+            "ear": float(payload["ear"]),
+            "mar": float(payload["mar"]),
+            "pitch": float(payload["pitch"]),
+            "yaw": float(payload["yaw"]),
+            "head_direction": str(payload["head_direction"]),
+            "phone_detected": bool(payload["phone_detected"]),
+            "seatbelt_detected": bool(payload["seatbelt_detected"]),
+            "drowsy": bool(payload["drowsy"]),
+            "yawning": bool(payload["yawning"]),
+            "distracted": bool(payload["distracted"]),
+            "risk_score": int(payload["risk_score"]),
+            "risk_level": str(payload["risk_level"]),
+        }
+
+        # Store telemetry in Railway database
+        log_telemetry(**telemetry_payload)
+
+        # Trigger email automatically when risk >= 70.
+        # LOW and MEDIUM risk will not send email.
+        # email_alerts.py also enforces a 5-minute cooldown.
+        email_alert_status = send_high_risk_email(
+            telemetry_payload
         )
 
         return {
             "status": "ok",
             "message": "Live telemetry received",
+            "email_alert": email_alert_status,
         }
 
     except (KeyError, TypeError, ValueError) as exc:
@@ -227,4 +238,4 @@ def receive_live_telemetry(payload: dict = Body(...)):
             status_code=500,
             detail=f"Failed to store telemetry: {exc}",
         ) from exc
-        
+

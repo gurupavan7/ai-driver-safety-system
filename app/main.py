@@ -8,6 +8,8 @@ import sqlite3
 import subprocess
 import threading
 import queue
+import urllib.request
+import urllib.error
 from pathlib import Path
 from datetime import datetime
 
@@ -15,7 +17,7 @@ import numpy as np
 from ultralytics import YOLO
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from telemetry import init_telemetry_table, log_telemetry
+from app.telemetry import init_telemetry_table, log_telemetry
 
 
 # ============================================================
@@ -91,6 +93,11 @@ EVENT_COOLDOWN = 5.0
 
 # Continuous analytics telemetry
 TELEMETRY_INTERVAL = 1.0  # seconds between database samples
+CLOUD_TELEMETRY_URL = (
+    "https://ai-driver-safety-system-production.up.railway.app/telemetry/live"
+)
+
+CLOUD_TIMEOUT = 3
 
 # Sound alert settings (macOS)
 SOUND_ALERTS_ENABLED = True
@@ -262,6 +269,46 @@ def log_event(event_type, risk_score, details):
     )
     conn.commit()
     conn.close()
+
+def send_cloud_telemetry(payload):
+    """
+    Send live driver telemetry to the Railway backend.
+
+    Runs in a background thread so network problems
+    never freeze the camera/detection loop.
+    """
+
+    def _send():
+        try:
+            data = json.dumps(payload).encode("utf-8")
+
+            request = urllib.request.Request(
+                CLOUD_TELEMETRY_URL,
+                data=data,
+                headers={
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+
+            with urllib.request.urlopen(
+                request,
+                timeout=CLOUD_TIMEOUT,
+            ) as response:
+                if response.status == 200:
+                    print(
+                        f"[CLOUD] Telemetry sent | "
+                        f"Risk: {payload['risk_score']} "
+                        f"({payload['risk_level']})"
+                    )
+
+        except Exception as exc:
+            print(f"[CLOUD] Telemetry unavailable: {exc}")
+
+    threading.Thread(
+        target=_send,
+        daemon=True,
+    ).start()
 
 
 # ============================================================
