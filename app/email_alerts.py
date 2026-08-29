@@ -98,6 +98,7 @@ AI Driver Safety & Accident Prevention System
         headers={
             "Authorization": f"Bearer {RESEND_API_KEY}",
             "Content-Type": "application/json",
+            "User-Agent": "ai-driver-safety-system/1.0",
         },
         method="POST",
     )
