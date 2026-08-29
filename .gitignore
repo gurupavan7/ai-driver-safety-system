@@ -34,3 +34,4 @@ analyzed_videos/
 # Frontend dependencies/build
 frontend/node_modules/
 frontend/dist/
+launcher/
