@@ -3,10 +3,12 @@ import sqlite3
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+from app.paths import DATA_DIR
+
+DB_PATH = DATA_DIR / "driver_safety.db"
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = PROJECT_ROOT / "data" / "driver_safety.db"
 
 
 def get_connection():
