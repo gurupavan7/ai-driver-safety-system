@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets / environment files
+.env
+.env.*
+!.env.example
+
+# Runtime databases and logs
+data/
+logs/
+
+# Generated runtime files
+uploads/
+reports/
+analyzed_videos/
+
+# Backup files
+*.backup
+*.bak
+
+# IDE
+.vscode/
+.idea/
+
+# Frontend dependencies/build
+frontend/node_modules/
+frontend/dist/
