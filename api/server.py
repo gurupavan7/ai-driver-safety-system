@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from app.telemetry import init_telemetry_table, log_telemetry
 
 from app.analytics import (
     get_all_telemetry,
@@ -190,4 +191,39 @@ def download_video_report(
         raise HTTPException(
             status_code=500,
             detail=f"Video report generation failed: {exc}",
+        ) from exc
+
+@app.post("/telemetry/live")
+def receive_live_telemetry(payload: dict = Body(...)):
+    try:
+        log_telemetry(
+            ear=float(payload["ear"]),
+            mar=float(payload["mar"]),
+            pitch=float(payload["pitch"]),
+            yaw=float(payload["yaw"]),
+            head_direction=str(payload["head_direction"]),
+            phone_detected=bool(payload["phone_detected"]),
+            seatbelt_detected=bool(payload["seatbelt_detected"]),
+            drowsy=bool(payload["drowsy"]),
+            yawning=bool(payload["yawning"]),
+            distracted=bool(payload["distracted"]),
+            risk_score=int(payload["risk_score"]),
+            risk_level=str(payload["risk_level"]),
+        )
+
+        return {
+            "status": "ok",
+            "message": "Live telemetry received",
+        }
+
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid telemetry payload: {exc}",
+        ) from exc
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to store telemetry: {exc}",
         ) from exc
