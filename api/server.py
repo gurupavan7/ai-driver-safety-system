@@ -227,3 +227,4 @@ def receive_live_telemetry(payload: dict = Body(...)):
             status_code=500,
             detail=f"Failed to store telemetry: {exc}",
         ) from exc
+        
