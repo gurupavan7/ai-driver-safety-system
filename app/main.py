@@ -844,20 +844,27 @@ def main():
             now = time.monotonic()
 
             if now - last_telemetry_time >= TELEMETRY_INTERVAL:
-                log_telemetry(
-                    ear=average_ear,
-                    mar=mar,
-                    pitch=pitch,
-                    yaw=yaw,
-                    head_direction=head_direction,
-                    phone_detected=phone_alert,
-                    seatbelt_detected=seatbelt_detected,
-                    drowsy=drowsy,
-                    yawning=yawning,
-                    distracted=distracted,
-                    risk_score=risk_score,
-                    risk_level=risk_level,
-                )
+
+                telemetry_payload = {
+                    "ear": float(average_ear),
+                    "mar": float(mar),
+                    "pitch": float(pitch),
+                    "yaw": float(yaw),
+                    "head_direction": str(head_direction),
+                    "phone_detected": bool(phone_alert),
+                    "seatbelt_detected": bool(seatbelt_detected),
+                    "drowsy": bool(drowsy),
+                    "yawning": bool(yawning),
+                    "distracted": bool(distracted),
+                    "risk_score": int(risk_score),
+                    "risk_level": str(risk_level),
+                }
+
+                # Save locally
+                log_telemetry(**telemetry_payload)
+
+                # Send real live telemetry to Railway
+                send_cloud_telemetry(telemetry_payload)
 
                 last_telemetry_time = now
 
