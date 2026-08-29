@@ -1,17 +1,18 @@
+import json
 import os
-import smtplib
 import threading
 import time
-from email.message import EmailMessage
+import urllib.error
+import urllib.request
 
 
-ALERT_EMAIL_FROM = os.getenv("ALERT_EMAIL_FROM", "").strip()
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
 ALERT_EMAIL_TO = os.getenv("ALERT_EMAIL_TO", "").strip()
-ALERT_EMAIL_APP_PASSWORD = (
-    os.getenv("ALERT_EMAIL_APP_PASSWORD", "")
-    .replace(" ", "")
-    .strip()
-)
+
+RESEND_FROM = os.getenv(
+    "RESEND_FROM",
+    "AI Driver Safety <onboarding@resend.dev>",
+).strip()
 
 HIGH_RISK_THRESHOLD = 70
 EMAIL_COOLDOWN_SECONDS = 300  # 5 minutes
@@ -22,9 +23,8 @@ _alert_lock = threading.Lock()
 
 def email_alerts_configured():
     return bool(
-        ALERT_EMAIL_FROM
+        RESEND_API_KEY
         and ALERT_EMAIL_TO
-        and ALERT_EMAIL_APP_PASSWORD
     )
 
 
@@ -55,21 +55,11 @@ def _detected_reasons(payload):
 def _send_email(payload):
     reasons = _detected_reasons(payload)
 
-    message = EmailMessage()
-
-    message["From"] = ALERT_EMAIL_FROM
-    message["To"] = ALERT_EMAIL_TO
-    message["Subject"] = (
-        f"🚨 Driver Safety HIGH Risk Alert "
-        f"({payload.get('risk_score', 0)}/100)"
-    )
-
     reason_text = "\n".join(
         f"- {reason}" for reason in reasons
     )
 
-    message.set_content(
-        f"""
+    email_body = f"""
 AI DRIVER SAFETY SYSTEM
 
 HIGH-RISK DRIVER CONDITION DETECTED
@@ -91,30 +81,57 @@ Immediate attention is recommended.
 
 AI Driver Safety & Accident Prevention System
 """.strip()
+
+    resend_payload = {
+        "from": RESEND_FROM,
+        "to": [ALERT_EMAIL_TO],
+        "subject": (
+            f"Driver Safety HIGH Risk Alert "
+            f"({payload.get('risk_score', 0)}/100)"
+        ),
+        "text": email_body,
+    }
+
+    request = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=json.dumps(resend_payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
     )
 
-    with smtplib.SMTP_SSL(
-        "smtp.gmail.com",
-        465,
-        timeout=10,
-    ) as smtp:
-        smtp.login(
-            ALERT_EMAIL_FROM,
-            ALERT_EMAIL_APP_PASSWORD,
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=10,
+        ) as response:
+            response_body = response.read().decode("utf-8")
+
+            print(
+                "[EMAIL] HIGH-risk Resend alert sent "
+                f"to {ALERT_EMAIL_TO}"
+            )
+            print(f"[EMAIL] Resend response: {response_body}")
+
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode(
+            "utf-8",
+            errors="replace",
         )
 
-        smtp.send_message(message)
-
-    print(
-        "[EMAIL] HIGH-risk alert sent successfully "
-        f"to {ALERT_EMAIL_TO}"
-    )
+        raise RuntimeError(
+            f"Resend HTTP {exc.code}: {error_body}"
+        ) from exc
 
 
 def send_high_risk_email(payload):
     global _last_alert_time
 
-    risk_score = int(payload.get("risk_score", 0))
+    risk_score = int(
+        payload.get("risk_score", 0)
+    )
 
     if risk_score < HIGH_RISK_THRESHOLD:
         return {
@@ -122,7 +139,9 @@ def send_high_risk_email(payload):
         }
 
     if not email_alerts_configured():
-        print("[EMAIL] Alert credentials are not configured.")
+        print(
+            "[EMAIL] Resend credentials are not configured."
+        )
 
         return {
             "status": "not_configured",
@@ -141,8 +160,6 @@ def send_high_risk_email(payload):
                 "remaining_seconds": int(remaining),
             }
 
-        # Reserve the cooldown immediately so multiple
-        # telemetry requests cannot send duplicate emails.
         _last_alert_time = now
 
     def worker():
@@ -151,7 +168,7 @@ def send_high_risk_email(payload):
 
         except Exception as exc:
             print(
-                f"[EMAIL] Failed to send HIGH-risk alert: {exc}"
+                f"[EMAIL] Failed to send Resend alert: {exc}"
             )
 
     threading.Thread(
