@@ -2,12 +2,8 @@ from __future__ import annotations
 
 import shutil
 import uuid
-from pathlib import Path
-
 from contextlib import asynccontextmanager
-from app.storage import init_storage
-
-from app.telemetry import init_telemetry_table
+from pathlib import Path
 
 from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,24 +16,27 @@ from app.analytics import (
     get_recent_events,
     get_risk_summary,
 )
+from app.paths import UPLOADS_DIR
 from app.report_generator import generate_session_report, generate_video_report
+from app.storage import init_storage
+from app.telemetry import init_telemetry_table
 from app.video_analyzer import SUPPORTED_EXTENSIONS, analyze_video
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-UPLOAD_DIR = PROJECT_ROOT / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
 MAX_UPLOAD_SIZE = 500 * 1024 * 1024
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print("Initializing Driver Safety database...")
+
     init_storage()
     init_telemetry_table()
 
-    print("Driver Safety database initialized.")
+    print("Driver Safety database initialized successfully.")
 
     yield
+
 
 app = FastAPI(
     title="AI Driver Safety API",
@@ -45,6 +44,7 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan,
 )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -116,8 +116,10 @@ def analyze_uploaded_video(file: UploadFile = File(...)):
             detail=f"Unsupported format. Supported: {supported}",
         )
 
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
     unique_name = f"{uuid.uuid4().hex}{extension}"
-    destination = UPLOAD_DIR / unique_name
+    destination = UPLOADS_DIR / unique_name
 
     try:
         with destination.open("wb") as output:
@@ -132,6 +134,7 @@ def analyze_uploaded_video(file: UploadFile = File(...)):
 
         result = analyze_video(destination)
         result["video"]["original_file_name"] = original_name
+
         return result
 
     except HTTPException:
@@ -188,59 +191,3 @@ def download_video_report(
             status_code=500,
             detail=f"Video report generation failed: {exc}",
         ) from exc
-
-from pathlib import Path
-import sqlite3
-from app.paths import UPLOADS_DIR, REPORTS_DIR
-
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-DB_PATH = DATA_DIR / "driver_safety.db"
-
-
-def init_storage():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-    connection = sqlite3.connect(DB_PATH)
-    cursor = connection.cursor()
-
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            event_type TEXT NOT NULL,
-            risk_score INTEGER NOT NULL,
-            details TEXT
-        )
-        """
-    )
-
-    connection.commit()
-    connection.close()
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    init_storage()
-    init_telemetry_table()
-
-    print("Driver Safety database initialized.")
-
-    yield
-
-    app = FastAPI(
-    title="AI Driver Safety API",
-    description="Backend API for the AI Driver Safety & Accident Prevention System",
-    version="3.0.0",
-    lifespan=lifespan,
-)
-
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
